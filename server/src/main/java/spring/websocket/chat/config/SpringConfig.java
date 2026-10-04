@@ -3,13 +3,10 @@ package spring.websocket.chat.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.core.session.SessionRegistry;
-import org.springframework.security.core.session.SessionRegistryImpl;
 import org.springframework.web.servlet.ViewResolver;
-import org.springframework.web.servlet.config.annotation.DefaultServletHandlerConfigurer;
-import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurerAdapter;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.view.InternalResourceViewResolver;
 import org.springframework.web.servlet.view.JstlView;
 
@@ -20,13 +17,12 @@ import org.springframework.web.servlet.view.JstlView;
  * @author Yasitha Thilakaratne
  */
 @Configuration
-@EnableWebMvc
 @ComponentScan(basePackages = "spring.websocket.chat")
-public class SpringConfig extends WebMvcConfigurerAdapter {
+public class SpringConfig implements WebMvcConfigurer {
 
     @Bean
     public ViewResolver viewResolver() {
-    InternalResourceViewResolver viewResolver = new InternalResourceViewResolver();
+        InternalResourceViewResolver viewResolver = new InternalResourceViewResolver();
         viewResolver.setViewClass(JstlView.class);
         viewResolver.setPrefix("/WEB-INF/pages/");
         viewResolver.setSuffix(".jsp");
@@ -34,14 +30,18 @@ public class SpringConfig extends WebMvcConfigurerAdapter {
     }
 
     @Override
-    public void configureDefaultServletHandling(DefaultServletHandlerConfigurer configurer) {
-        configurer.enable();
-    }
-
-    @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         registry.addResourceHandler("/webjars/**").addResourceLocations("/webjars/");
         registry.addResourceHandler("/js/**").addResourceLocations("/js/");
         registry.addResourceHandler("/css/**").addResourceLocations("/css/");
+    }
+
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/**")
+                .allowedOrigins("http://localhost:5173")
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true);
     }
 }

@@ -15,13 +15,15 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.ModelMap;
 import org.springframework.web.bind.annotation.RequestMapping;
 
+import spring.websocket.chat.service.UserService;
 import spring.web.socket.chat.dto.ChatMessage;
 import spring.web.socket.chat.dto.OutputMessage;
+import spring.web.socket.chat.dto.TypingEvent;
 import spring.websocket.chat.util.ActiveSessionManager;
 import spring.websocket.chat.util.CommonUtils;
 
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.security.Principal;
 import java.util.*;
 
@@ -42,6 +44,9 @@ public class MessageForwardController extends BaseSecurityController implements 
 
     @Autowired
     private ActiveSessionManager activeSessionManager;
+
+    @Autowired
+    private UserService userService;
 
     @PostConstruct
     private void init() {
@@ -64,6 +69,9 @@ public class MessageForwardController extends BaseSecurityController implements 
         return "login";
     }
 
+    @Autowired
+    private spring.websocket.chat.service.ChatService chatService;
+
     @MessageMapping("/chat")
     public void send(Message<ChatMessage> message, @Payload ChatMessage chatMessage) throws Exception {
         Principal principal = message.getHeaders().get(SimpMessageHeaderAccessor.USER_HEADER, Principal.class);
@@ -74,22 +82,60 @@ public class MessageForwardController extends BaseSecurityController implements 
         String authenticatedSender = principal.getName();
         String time = CommonUtils.getCurrentTimeStamp();
 
+        // Save private message to database with attachment info
+        spring.websocket.chat.entity.ChatMessage saved = chatService.saveMessage(
+                chatMessage.getFrom(),
+                chatMessage.getRecipient(),
+                null,
+                chatMessage.getText(),
+                chatMessage.getIsAttachment(),
+                chatMessage.getAttachmentName(),
+                chatMessage.getAttachmentPath(),
+                chatMessage.getAttachmentType(),
+                chatMessage.getAttachmentSize()
+        );
+
+        String downloadUrl = null;
+        if (Boolean.TRUE.equals(saved.getIsAttachment()) && saved.getId() != null) {
+            downloadUrl = "/api/files/download/" + saved.getId();
+        }
+
         if (!authenticatedSender.equals(chatMessage.getRecipient())) {
             webSocket.convertAndSendToUser(authenticatedSender, "/queue/messages",
-                    new OutputMessage(chatMessage.getFrom(), chatMessage.getText(), time, true));
+                    new OutputMessage(saved.getId(), chatMessage.getFrom(), chatMessage.getText(), time, true, saved.getDeliveryStatus(),
+                            saved.getIsAttachment(), saved.getAttachmentName(), downloadUrl, saved.getAttachmentType(), saved.getAttachmentSize()));
         }
 
         webSocket.convertAndSendToUser(chatMessage.getRecipient(), "/queue/messages",
-                new OutputMessage(chatMessage.getFrom(), chatMessage.getText(), time, false));
+                new OutputMessage(saved.getId(), chatMessage.getFrom(), chatMessage.getText(), time, false, saved.getDeliveryStatus(),
+                        saved.getIsAttachment(), saved.getAttachmentName(), downloadUrl, saved.getAttachmentType(), saved.getAttachmentSize()));
 
     }
 
-    /**
-     * This method will get called when Observable's internal state
-     * is changed.
-     */
+    @MessageMapping("/chat/read")
+    public void readMessages(Message<Map<String, String>> message, @Payload Map<String, String> payload) {
+        Principal principal = message.getHeaders().get(SimpMessageHeaderAccessor.USER_HEADER, Principal.class);
+        if (principal == null) {
+            return;
+        }
+        String recipient = principal.getName();
+        String sender = payload.get("sender");
+        if (sender != null) {
+            chatService.readMessagesFromSender(sender, recipient);
+        }
+    }
+
     public void notifyActiveUserChange() {
-        Set<String> activeUsers = activeSessionManager.getAll();
-        webSocket.convertAndSend("/topic/active", activeUsers);
+        webSocket.convertAndSend("/topic/active", userService.getAllUsersPresence());
+    }
+
+    @MessageMapping("/chat/typing")
+    public void privateTyping(Message<TypingEvent> message, @Payload TypingEvent event) {
+        Principal principal = message.getHeaders().get(SimpMessageHeaderAccessor.USER_HEADER, Principal.class);
+        if (principal == null) {
+            return;
+        }
+        event.setFrom(principal.getName());
+        webSocket.convertAndSendToUser(event.getRecipient(), "/queue/typing", event);
     }
 }

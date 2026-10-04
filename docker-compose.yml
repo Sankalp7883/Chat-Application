@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: chat-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: chatpassword
+      MYSQL_DATABASE: websocket_chat
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pchatpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chat-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: chat-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - chat-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chat-backend
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/websocket_chat?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: chatpassword
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: org.hibernate.dialect.MySQLDialect
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+    networks:
+      - chat-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: chat-frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - chat-network
+
+volumes:
+  mysql_data:
+  redis_data:
+
+networks:
+  chat-network:
+    driver: bridge

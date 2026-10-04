@@ -1,0 +1,17 @@
+target/
+*/target/
+
+node_modules/
+dist/
+frontend/dist/
+
+.vscode/
+.idea/
+
+*.log
+*.tmp
+~$*
+
+.env
+.env.*
+!.env.example

@@ -45,7 +45,8 @@
 
 <script>
 
-    var ws = new WebSocket('ws://localhost:8080/sample-chat/web-socket');
+    var wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var ws = new WebSocket(wsProtocol + '//' + window.location.host + '/sample-chat/web-socket');
 
     ws.onopen = function () {
         document.getElementById('content').innerHTML = document.getElementById('content').innerHTML + '<div>Connected to server...</div><br>';

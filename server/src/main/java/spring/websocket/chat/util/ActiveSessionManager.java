@@ -1,6 +1,9 @@
 package spring.websocket.chat.util;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
+import spring.websocket.chat.service.UserService;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -19,17 +22,19 @@ import java.util.concurrent.*;
 @Component
 public class ActiveSessionManager {
 
-    private final Map<String, Object> map;
+    @Autowired
+    private UserService userService;
 
-    // Dummy value to associate with an Object in the backing Map
-    private static final Object PRESENT = new Object();
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
+    private static final String REDIS_KEY = "chat:active_users";
 
     private List<ActiveUserChangeListener> listeners;
 
     private ThreadPoolExecutor notifyPool;
 
     private ActiveSessionManager() {
-        map = new ConcurrentHashMap<>();
         listeners = new CopyOnWriteArrayList<>();
         notifyPool = new ThreadPoolExecutor(1, 5, 10, TimeUnit.SECONDS, new ArrayBlockingQueue<>(100));
     }
@@ -40,7 +45,11 @@ public class ActiveSessionManager {
      * @param username - to be added
      */
     public void add(String username) {
-        map.put(username, PRESENT);
+        if (userService != null) {
+            userService.setUserOnline(username, true);
+        }
+        redisTemplate.opsForSet().add(REDIS_KEY, username);
+        redisTemplate.opsForValue().set("user:online:" + username, "true");
         notifyListeners();
     }
 
@@ -50,7 +59,11 @@ public class ActiveSessionManager {
      * @param username - to be removed
      */
     public void remove(String username) {
-        map.remove(username);
+        if (userService != null) {
+            userService.setUserOnline(username, false);
+        }
+        redisTemplate.opsForSet().remove(REDIS_KEY, username);
+        redisTemplate.opsForValue().set("user:online:" + username, "false");
         notifyListeners();
     }
 
@@ -58,10 +71,8 @@ public class ActiveSessionManager {
      * Clears all data
      */
     public void clear() {
-        synchronized (map) {
-            map.clear();
-            notifyListeners();
-        }
+        redisTemplate.delete(REDIS_KEY);
+        notifyListeners();
     }
 
     /**
@@ -70,7 +81,15 @@ public class ActiveSessionManager {
      * @return - Set of active username.
      */
     public Set<String> getAll() {
-        return map.keySet();
+        Set<Object> members = redisTemplate.opsForSet().members(REDIS_KEY);
+        if (members == null) {
+            return Collections.emptySet();
+        }
+        Set<String> activeUsers = new HashSet<>();
+        for (Object member : members) {
+            activeUsers.add(String.valueOf(member));
+        }
+        return activeUsers;
     }
 
     /**
@@ -81,7 +100,7 @@ public class ActiveSessionManager {
      * @return - set of usernames except passed username
      */
     public Set<String> getAllExceptCurrentUser(String currentUsername) {
-        Set<String> users = new HashSet<>(map.keySet());
+        Set<String> users = getAll();
         users.remove(currentUsername);
         return users;
     }
@@ -92,7 +111,12 @@ public class ActiveSessionManager {
      * @param usernames - Collection of usernames
      */
     public void addAll(Collection<String> usernames) {
-        usernames.forEach(s -> map.put(s, PRESENT));
+        if (usernames != null && !usernames.isEmpty()) {
+            redisTemplate.opsForSet().add(REDIS_KEY, usernames.toArray(new Object[0]));
+            for (String u : usernames) {
+                redisTemplate.opsForValue().set("user:online:" + u, "true");
+            }
+        }
         notifyListeners();
     }
 
