@@ -114,20 +114,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Card 4: SSE Notifications */}
-          <div className="col-md-6 col-lg-5">
-            <div className="card border-0 shadow-sm h-100 p-3" style={{ borderRadius: '12px' }}>
-              <div className="card-body d-flex flex-column">
-                <h4 className="card-title fw-bold text-info mb-3">SSE Notifications</h4>
-                <p className="card-text text-muted flex-grow-1">
-                  Listen for real-time notifications pushed from the server using EventSource / Server-Sent Events, or publish your own notifications.
-                </p>
-                <Link to="/sse-notifications" className="btn btn-info mt-3 w-100 py-2 fw-semibold text-white">
-                  Open Dashboard
-                </Link>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -1,7 +1,8 @@
 package spring.websocket.chat.controller;
 
 import org.springframework.messaging.handler.annotation.MessageMapping;
-import org.springframework.messaging.handler.annotation.SendTo;
+import org.springframework.messaging.handler.annotation.DestinationVariable;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -39,13 +40,18 @@ public class MessageBroadcastController {
     @Autowired
     private spring.websocket.chat.service.ChatService chatService;
 
-    @MessageMapping("/grp-chat")
-    @SendTo("/topic/messages")
-    public OutputMessage send(ChatMessage chatMessage) throws Exception {
+    @MessageMapping("/grp-chat/{roomId}")
+    public OutputMessage send(@DestinationVariable Long roomId, ChatMessage chatMessage,
+                              SimpMessageHeaderAccessor headers) throws Exception {
+        String username = headers.getUser() != null ? headers.getUser().getName() : chatMessage.getFrom();
+        if (!chatService.isMember(roomId, username)) {
+            throw new IllegalArgumentException("Join the room before sending messages");
+        }
+        spring.websocket.chat.dto.ChatRoomDto room = chatService.getRoomForUser(roomId, username);
         spring.websocket.chat.entity.ChatMessage saved = chatService.saveMessage(
-                chatMessage.getFrom(),
+                username,
                 null,
-                "group_chat",
+                room.getName(),
                 chatMessage.getText(),
                 chatMessage.getIsAttachment(),
                 chatMessage.getAttachmentName(),
@@ -58,9 +64,9 @@ public class MessageBroadcastController {
         if (Boolean.TRUE.equals(saved.getIsAttachment()) && saved.getId() != null) {
             downloadUrl = "/api/files/download/" + saved.getId();
         }
-        return new OutputMessage(
+        OutputMessage output = new OutputMessage(
                 saved.getId(),
-                chatMessage.getFrom(),
+                username,
                 chatMessage.getText(),
                 time,
                 false,
@@ -71,11 +77,20 @@ public class MessageBroadcastController {
                 saved.getAttachmentType(),
                 saved.getAttachmentSize()
         );
+        messagingTemplate.convertAndSend("/topic/groups/" + roomId, output);
+        return output;
     }
 
-    @MessageMapping("/grp-chat/typing")
-    @SendTo("/topic/messages/typing")
-    public TypingEvent grpTyping(TypingEvent event) {
+    @Autowired
+    private org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
+
+    @MessageMapping("/grp-chat/{roomId}/typing")
+    public TypingEvent grpTyping(@DestinationVariable Long roomId, TypingEvent event,
+                                 SimpMessageHeaderAccessor headers) {
+        if (headers.getUser() == null || !chatService.isMember(roomId, headers.getUser().getName())) {
+            throw new IllegalArgumentException("Join the room before sending typing events");
+        }
+        messagingTemplate.convertAndSend("/topic/groups/" + roomId + "/typing", event);
         return event;
     }
 

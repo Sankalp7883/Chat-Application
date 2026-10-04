@@ -9,7 +9,11 @@ export default function GroupChat() {
   const [nickname, setNickname] = useState(localStorage.getItem('username') || '');
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([]);
+  const [attachmentUrls, setAttachmentUrls] = useState({});
   const [connected, setConnected] = useState(false);
+  const [rooms, setRooms] = useState([]);
+  const [currentRoom, setCurrentRoom] = useState(null);
+  const [newRoomName, setNewRoomName] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const stompClientRef = useRef(null);
   const chatBoxRef = useRef(null);
@@ -22,16 +26,111 @@ export default function GroupChat() {
   const localTypingTimeoutRef = useRef(null);
   const nicknameRef = useRef(nickname);
 
+  const loadRooms = async () => {
+    try {
+      const res = await api.get('/api/groups');
+      const availableRooms = res.data || [];
+      setRooms(availableRooms);
+      setCurrentRoom((previousRoom) => {
+        const updatedCurrentRoom = previousRoom
+          ? availableRooms.find((room) => room.id === previousRoom.id)
+          : availableRooms.find((room) => room.members?.includes(nicknameRef.current));
+        if (!updatedCurrentRoom) return previousRoom;
+        return JSON.stringify(previousRoom) === JSON.stringify(updatedCurrentRoom)
+          ? previousRoom
+          : updatedCurrentRoom;
+      });
+    } catch (err) {
+      console.error('Failed to load groups:', err);
+    }
+  };
+
+  const joinRoom = async (roomId) => {
+    try {
+      const res = await api.post(`/api/groups/${roomId}/join`);
+      setRooms((prev) => prev.map((room) => room.id === res.data.id ? res.data : room));
+      if (res.data.member) {
+        setCurrentRoom(res.data);
+      } else {
+        alert('Join request sent. The group admin must approve you.');
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || 'Unable to join this group.');
+    }
+  };
+
+  const approveMember = async (roomId, username) => {
+    try {
+      const res = await api.post(`/api/groups/${roomId}/members/${encodeURIComponent(username)}/approve`);
+      setRooms((prev) => prev.map((room) => room.id === res.data.id ? res.data : room));
+      if (currentRoom?.id === res.data.id) setCurrentRoom(res.data);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Unable to approve member.');
+    }
+  };
+
+  const removeMember = async (roomId, username) => {
+    if (!window.confirm(`Remove ${username} from this group?`)) return;
+    try {
+      const res = await api.delete(`/api/groups/${roomId}/members/${encodeURIComponent(username)}`);
+      setRooms((prev) => prev.map((room) => room.id === res.data.id ? res.data : room));
+      if (currentRoom?.id === res.data.id) setCurrentRoom(res.data);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Unable to remove member.');
+    }
+  };
+
+  const deleteRoom = async (roomId) => {
+    if (!window.confirm('Delete this group and its membership?')) return;
+    try {
+      await api.delete(`/api/groups/${roomId}`);
+      setRooms((prev) => prev.filter((room) => room.id !== roomId));
+      if (currentRoom?.id === roomId) {
+        setCurrentRoom(null);
+        setMessages([]);
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || 'Unable to delete group.');
+    }
+  };
+
+  const createRoom = async (e) => {
+    e.preventDefault();
+    if (!newRoomName.trim()) return;
+    try {
+      const res = await api.post('/api/groups', { name: newRoomName.trim() });
+      setRooms((prev) => [...prev, res.data]);
+      setCurrentRoom(res.data);
+      setNewRoomName('');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Unable to create this group.');
+    }
+  };
+
   useEffect(() => {
     nicknameRef.current = nickname;
   }, [nickname]);
 
   useEffect(() => {
-    // Load history
+    loadRooms();
+    const refreshTimer = setInterval(loadRooms, 3000);
+    return () => clearInterval(refreshTimer);
+  }, []);
+
+  useEffect(() => {
+    if (!currentRoom) return undefined;
+    const roomId = currentRoom.id;
+    let cancelled = false;
+    setMessages([]);
+    setTypingUsers([]);
+
+    // Load history for the selected room.
     const loadHistory = async () => {
       try {
-        const res = await api.get('/messages/group/group_chat');
+        const res = await api.get(`/messages/group/${roomId}`);
+        if (cancelled) return;
         const history = res.data.map((msg) => ({
+          id: msg.id,
           from: msg.senderName,
           message: msg.content,
           time: new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -41,7 +140,18 @@ export default function GroupChat() {
           attachmentType: msg.attachmentType,
           attachmentSize: msg.attachmentSize
         }));
-        setMessages(history);
+        setMessages((currentMessages) => {
+          const merged = [...history, ...currentMessages];
+          const seen = new Set();
+          return merged.filter((msg) => {
+            const key = msg.id != null
+              ? `id:${msg.id}`
+              : `${msg.from}|${msg.message}|${msg.time}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        });
       } catch (err) {
         console.error('Failed to load chat history:', err);
       }
@@ -58,11 +168,13 @@ export default function GroupChat() {
       heartbeatIncoming: 4000,
       heartbeatOutgoing: 4000,
       onConnect: (frame) => {
+        if (cancelled) return;
         setConnected(true);
         console.log('Connected to group chat: ' + frame);
-        client.subscribe('/topic/messages', (messageOutput) => {
+        client.subscribe(`/topic/groups/${roomId}`, (messageOutput) => {
           const body = JSON.parse(messageOutput.body);
-          setMessages((prev) => [...prev, {
+          const incoming = {
+            id: body.id,
             from: body.from,
             message: body.message,
             time: body.time,
@@ -71,10 +183,16 @@ export default function GroupChat() {
             attachmentUrl: body.attachmentUrl,
             attachmentType: body.attachmentType,
             attachmentSize: body.attachmentSize
-          }]);
+          };
+          setMessages((prev) => {
+            if (incoming.id != null && prev.some((msg) => msg.id === incoming.id)) {
+              return prev;
+            }
+            return [...prev, incoming];
+          });
         });
 
-        client.subscribe('/topic/messages/typing', (messageOutput) => {
+        client.subscribe(`/topic/groups/${roomId}/typing`, (messageOutput) => {
           const body = JSON.parse(messageOutput.body);
           const { from, typing } = body;
           if (from === nicknameRef.current) return;
@@ -115,6 +233,7 @@ export default function GroupChat() {
     stompClientRef.current = client;
 
     return () => {
+      cancelled = true;
       if (stompClientRef.current) {
         stompClientRef.current.deactivate();
       }
@@ -123,7 +242,7 @@ export default function GroupChat() {
         clearTimeout(localTypingTimeoutRef.current);
       }
     };
-  }, []);
+  }, [currentRoom]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -132,10 +251,32 @@ export default function GroupChat() {
     }
   }, [messages]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const urls = {};
+    const attachmentMessages = messages.filter((msg) => msg.isAttachment && msg.attachmentUrl);
+
+    Promise.all(attachmentMessages.map(async (msg) => {
+      try {
+        const response = await api.get(msg.attachmentUrl, { responseType: 'blob' });
+        urls[msg.attachmentUrl] = URL.createObjectURL(response.data);
+      } catch (err) {
+        console.error('Failed to load attachment:', err);
+      }
+    })).then(() => {
+      if (!cancelled) setAttachmentUrls(urls);
+    });
+
+    return () => {
+      cancelled = true;
+      Object.values(urls).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [messages]);
+
   const sendTypingStatus = (typing) => {
     if (stompClientRef.current && stompClientRef.current.connected) {
       stompClientRef.current.publish({
-        destination: '/app/grp-chat/typing',
+        destination: `/app/grp-chat/${currentRoom?.id}/typing`,
         body: JSON.stringify({
           from: nicknameRef.current,
           typing: typing
@@ -147,7 +288,7 @@ export default function GroupChat() {
   const handleInputChange = (e) => {
     setMessage(e.target.value);
 
-    if (stompClientRef.current && stompClientRef.current.connected) {
+    if (stompClientRef.current && stompClientRef.current.connected && currentRoom) {
       if (!isTyping) {
         setIsTyping(true);
         sendTypingStatus(true);
@@ -178,7 +319,7 @@ export default function GroupChat() {
         text: message
       };
       stompClientRef.current.publish({
-        destination: '/app/grp-chat',
+        destination: `/app/grp-chat/${currentRoom.id}`,
         body: JSON.stringify(payload)
       });
 
@@ -247,7 +388,7 @@ export default function GroupChat() {
         };
 
         stompClientRef.current.publish({
-          destination: '/app/grp-chat',
+          destination: `/app/grp-chat/${currentRoom.id}`,
           body: JSON.stringify(payload),
         });
       }
@@ -263,7 +404,7 @@ export default function GroupChat() {
 
   const renderMessageContent = (msg) => {
     if (msg.isAttachment) {
-      const downloadUrl = msg.attachmentUrl ? `${API_BASE_URL}${msg.attachmentUrl}` : null;
+      const downloadUrl = msg.attachmentUrl ? attachmentUrls[msg.attachmentUrl] : null;
       const formattedSize = msg.attachmentSize
         ? (msg.attachmentSize / 1024 < 1024
             ? `${(msg.attachmentSize / 1024).toFixed(1)} KB`
@@ -342,6 +483,68 @@ export default function GroupChat() {
 
       {/* Main Layout */}
       <div className="container">
+        <div className="row g-4 mb-4">
+          <div className="col-lg-8">
+            <div className="card border-0 shadow-sm p-3" style={{ borderRadius: '12px' }}>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <h5 className="fw-bold mb-0">Group channels</h5>
+                <span className="text-muted small">{rooms.length} available</span>
+              </div>
+              <div className="d-flex flex-wrap gap-2 mb-3">
+                {rooms.map((room) => (
+                  <div key={room.id} className="d-flex align-items-center gap-1">
+                    <button
+                      type="button"
+                      className={`btn ${currentRoom?.id === room.id ? 'btn-success' : 'btn-outline-success'}`}
+                      onClick={() => room.member ? setCurrentRoom(room) : joinRoom(room.id)}
+                    >
+                      {room.name} ({room.members?.length || 0})
+                    </button>
+                    {room.canManage && (
+                      <button type="button" className="btn btn-outline-danger" onClick={() => deleteRoom(room.id)}>
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <form onSubmit={createRoom} className="d-flex gap-2">
+                <input
+                  className="form-control"
+                  placeholder="New group name"
+                  value={newRoomName}
+                  onChange={(e) => setNewRoomName(e.target.value)}
+                  maxLength={80}
+                />
+                <button className="btn btn-primary" type="submit">Create</button>
+              </form>
+            </div>
+          </div>
+          <div className="col-lg-4">
+            <div className="card border-0 shadow-sm p-3 h-100" style={{ borderRadius: '12px' }}>
+              <h5 className="fw-bold">Members</h5>
+              {currentRoom ? (
+                <div className="d-flex flex-wrap gap-2">
+                  {currentRoom.members?.map((member) => (
+                    <span className="badge bg-secondary d-inline-flex align-items-center gap-1" key={member}>
+                      {member}{member === currentRoom.owner ? ' (owner)' : ''}
+                      {currentRoom.canManage && member !== currentRoom.owner && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-link text-white p-0"
+                          onClick={() => removeMember(currentRoom.id, member)}
+                          title={`Remove ${member}`}
+                        >
+                          &times;
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              ) : <p className="text-muted mb-0">Join a group to see its members.</p>}
+            </div>
+          </div>
+        </div>
         <div className="row justify-content-center">
           <div className="col-lg-8">
             <div className="card border-0 shadow-sm p-4 mb-4" style={{ borderRadius: '12px' }}>
@@ -369,7 +572,7 @@ export default function GroupChat() {
                 {messages.length === 0 ? (
                   <div className="text-center text-muted py-5">
                     <p className="mb-0">No messages in this room yet.</p>
-                    <small>Enter a nickname and message to start the conversation.</small>
+                    <small>{currentRoom ? `Join ${currentRoom.name} and start the conversation.` : 'Create or join a group to start chatting.'}</small>
                   </div>
                 ) : (
                   messages.map((msg, index) => (
@@ -382,6 +585,19 @@ export default function GroupChat() {
                       <div className="meta">{msg.time}</div>
                     </div>
                   ))
+                )}
+                {currentRoom?.canManage && currentRoom.pendingMembers?.length > 0 && (
+                  <div className="mt-3">
+                    <h6>Pending requests</h6>
+                    {currentRoom.pendingMembers.map((member) => (
+                      <div className="d-flex justify-content-between align-items-center mb-2" key={member}>
+                        <span>{member}</span>
+                        <button className="btn btn-sm btn-primary" onClick={() => approveMember(currentRoom.id, member)}>
+                          Approve
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -427,7 +643,7 @@ export default function GroupChat() {
                     type="text"
                     ref={messageInputRef}
                     className="form-control form-control-lg me-2"
-                    placeholder="Write a message..."
+                    placeholder={currentRoom ? 'Write a message...' : 'Join a group first'}
                     value={message}
                     onChange={handleInputChange}
                   />

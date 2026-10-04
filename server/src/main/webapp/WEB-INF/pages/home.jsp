@@ -27,8 +27,6 @@
     <li class="list-group-item"><a href="<c:url value="/web-sock" />">Plain Web Socket: Group broadcast chat</a> </li>
     <li class="list-group-item"><a href="<c:url value="/chatbot" />">Web Socket Stomp JS Chat : Group broadcast chat</a> </li>
     <li class="list-group-item"><a href="<c:url value="/msg-forward/chatbot" />">Web Socket Stomp JS Chat : User to user chat</a> </li>
-    <li class="list-group-item"><a href="<c:url value="/sse/add-notification" />">EventSource, SseEmitter Add Notification</a> </li>
-    <li class="list-group-item"><a href="<c:url value="/sse/get-notification" />">EventSource, SseEmitter get Notification</a> </li>
   </ul>
 </div>
 </body>

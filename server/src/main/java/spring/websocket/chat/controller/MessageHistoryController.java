@@ -17,7 +17,16 @@ public class MessageHistoryController {
     private ChatService chatService;
 
     @GetMapping("/group/{id}")
-    public ResponseEntity<List<ChatMessageDto>> getGroupMessages(@PathVariable("id") String id) {
+    public ResponseEntity<List<ChatMessageDto>> getGroupMessages(@PathVariable("id") String id, Principal principal) {
+        try {
+            Long roomId = Long.parseLong(id);
+            if (!chatService.isPublicGroup(roomId)
+                    || !chatService.isMember(roomId, principal.getName())) {
+                return ResponseEntity.status(403).build();
+            }
+        } catch (NumberFormatException ignored) {
+            // Legacy named rooms remain available only for their own clients.
+        }
         return ResponseEntity.ok(chatService.getGroupMessages(id));
     }
 

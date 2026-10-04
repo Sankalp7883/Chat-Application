@@ -80,11 +80,15 @@ public class MessageForwardController extends BaseSecurityController implements 
             return;
         }
         String authenticatedSender = principal.getName();
+        if (chatMessage.getRecipient() == null || chatMessage.getRecipient().trim().isEmpty()) {
+            LOGGER.warn("Private message rejected because no recipient was provided by {}", authenticatedSender);
+            return;
+        }
         String time = CommonUtils.getCurrentTimeStamp();
 
         // Save private message to database with attachment info
         spring.websocket.chat.entity.ChatMessage saved = chatService.saveMessage(
-                chatMessage.getFrom(),
+                authenticatedSender,
                 chatMessage.getRecipient(),
                 null,
                 chatMessage.getText(),
@@ -102,12 +106,12 @@ public class MessageForwardController extends BaseSecurityController implements 
 
         if (!authenticatedSender.equals(chatMessage.getRecipient())) {
             webSocket.convertAndSendToUser(authenticatedSender, "/queue/messages",
-                    new OutputMessage(saved.getId(), chatMessage.getFrom(), chatMessage.getText(), time, true, saved.getDeliveryStatus(),
+                    new OutputMessage(saved.getId(), authenticatedSender, chatMessage.getText(), time, true, saved.getDeliveryStatus(),
                             saved.getIsAttachment(), saved.getAttachmentName(), downloadUrl, saved.getAttachmentType(), saved.getAttachmentSize()));
         }
 
         webSocket.convertAndSendToUser(chatMessage.getRecipient(), "/queue/messages",
-                new OutputMessage(saved.getId(), chatMessage.getFrom(), chatMessage.getText(), time, false, saved.getDeliveryStatus(),
+                new OutputMessage(saved.getId(), authenticatedSender, chatMessage.getText(), time, false, saved.getDeliveryStatus(),
                         saved.getIsAttachment(), saved.getAttachmentName(), downloadUrl, saved.getAttachmentType(), saved.getAttachmentSize()));
 
     }

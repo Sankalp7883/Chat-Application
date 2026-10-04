@@ -5,7 +5,6 @@ import Home from './pages/Home';
 import GroupChat from './pages/GroupChat';
 import PrivateChat from './pages/PrivateChat';
 import RawChat from './pages/RawChat';
-import SseNotifications from './pages/SseNotifications';
 import './App.css';
 
 function App() {
@@ -16,7 +15,6 @@ function App() {
         <Route path="/group-chat" element={<GroupChat />} />
         <Route path="/private-chat" element={<PrivateChat />} />
         <Route path="/raw-chat" element={<RawChat />} />
-        <Route path="/sse-notifications" element={<SseNotifications />} />
         <Route path="/" element={<Home />} />
       </Routes>
     </Router>

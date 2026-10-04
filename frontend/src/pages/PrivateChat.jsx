@@ -11,6 +11,7 @@ export default function PrivateChat() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [message, setMessage] = useState('');
   const [chatHistories, setChatHistories] = useState({});
+  const [attachmentUrls, setAttachmentUrls] = useState({});
   const [connected, setConnected] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
@@ -37,9 +38,12 @@ export default function PrivateChat() {
   }, [currentUser]);
 
   useEffect(() => {
+    let cancelled = false;
+
     // 1. Fetch current logged-in user and initial active users
     api.get('/api/user/me')
       .then((res) => {
+        if (cancelled) return;
         if (res.data && res.data.status === 'authenticated') {
           setCurrentUser(res.data.username);
           setUsersPresence(res.data.usersPresence || []);
@@ -53,6 +57,7 @@ export default function PrivateChat() {
       });
 
     return () => {
+      cancelled = true;
       if (stompClientRef.current) {
         stompClientRef.current.deactivate();
       }
@@ -102,6 +107,29 @@ export default function PrivateChat() {
     }
   }, [chatHistories, selectedUser]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const urls = {};
+    const messages = selectedUser ? (chatHistories[selectedUser] || []) : [];
+    const attachmentMessages = messages.filter((msg) => msg.isAttachment && msg.attachmentUrl);
+
+    Promise.all(attachmentMessages.map(async (msg) => {
+      try {
+        const response = await api.get(msg.attachmentUrl, { responseType: 'blob' });
+        urls[msg.attachmentUrl] = URL.createObjectURL(response.data);
+      } catch (err) {
+        console.error('Failed to load attachment:', err);
+      }
+    })).then(() => {
+      if (!cancelled) setAttachmentUrls(urls);
+    });
+
+    return () => {
+      cancelled = true;
+      Object.values(urls).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [chatHistories, selectedUser]);
+
   const connectWebSocket = (username) => {
     const token = localStorage.getItem('accessToken');
     const socket = new SockJS(`${API_BASE_URL}/chat?token=${token}`);
@@ -139,6 +167,9 @@ export default function PrivateChat() {
                 attachmentType: body.attachmentType,
                 attachmentSize: body.attachmentSize
               };
+              if (newMsg.id != null && history.some((msg) => msg.id === newMsg.id)) {
+                return prev;
+              }
               return {
                 ...prev,
                 [contact]: [...history, newMsg],
@@ -362,7 +393,7 @@ export default function PrivateChat() {
 
   const renderMessageContent = (msg) => {
     if (msg.isAttachment) {
-      const downloadUrl = msg.attachmentUrl ? `${API_BASE_URL}${msg.attachmentUrl}` : null;
+      const downloadUrl = msg.attachmentUrl ? attachmentUrls[msg.attachmentUrl] : null;
       const formattedSize = msg.attachmentSize
         ? (msg.attachmentSize / 1024 < 1024
             ? `${(msg.attachmentSize / 1024).toFixed(1)} KB`

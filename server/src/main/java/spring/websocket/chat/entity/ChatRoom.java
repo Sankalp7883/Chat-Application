@@ -18,6 +18,10 @@ public class ChatRoom {
     @Column(name = "is_private", nullable = false)
     private boolean isPrivate;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "owner_id", nullable = true)
+    private User owner;
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "chat_room_members",
@@ -25,6 +29,14 @@ public class ChatRoom {
         inverseJoinColumns = @JoinColumn(name = "user_id")
     )
     private Set<User> members = new HashSet<>();
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "chat_room_join_requests",
+        joinColumns = @JoinColumn(name = "chat_room_id"),
+        inverseJoinColumns = @JoinColumn(name = "user_id")
+    )
+    private Set<User> joinRequests = new HashSet<>();
 
     public ChatRoom() {}
 
@@ -63,5 +75,21 @@ public class ChatRoom {
 
     public void setMembers(Set<User> members) {
         this.members = members;
+    }
+
+    public User getOwner() {
+        return owner;
+    }
+
+    public void setOwner(User owner) {
+        this.owner = owner;
+    }
+
+    public Set<User> getJoinRequests() {
+        return joinRequests;
+    }
+
+    public void setJoinRequests(Set<User> joinRequests) {
+        this.joinRequests = joinRequests;
     }
 }
