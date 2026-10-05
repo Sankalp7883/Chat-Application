@@ -4,8 +4,6 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.beans.factory.annotation.Autowired;
 import spring.web.socket.chat.dto.ChatMessage;
 import spring.web.socket.chat.dto.OutputMessage;
@@ -20,22 +18,6 @@ import spring.websocket.chat.util.CommonUtils;
  */
 @Controller
 public class MessageBroadcastController {
-
-    @RequestMapping("/")
-    public String home() {
-        return "home";
-    }
-
-
-    @RequestMapping("/chatbot")
-    public String getChatBot() {
-        return "sockJsGrpChat";
-    }
-
-    @RequestMapping("/web-sock")
-    public String getWebSocket() {
-        return "webSocketChat";
-    }
 
     @Autowired
     private spring.websocket.chat.service.ChatService chatService;
@@ -94,9 +76,4 @@ public class MessageBroadcastController {
         return event;
     }
 
-    @RequestMapping("test")
-    @ResponseBody
-    public String testResponse() {
-        return "CHAT APP IS RUNNING...";
-    }
 }

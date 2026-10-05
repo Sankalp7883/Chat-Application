@@ -8,12 +8,7 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.security.authentication.AnonymousAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Controller;
-import org.springframework.ui.ModelMap;
-import org.springframework.web.bind.annotation.RequestMapping;
 
 import spring.websocket.chat.service.UserService;
 import spring.web.socket.chat.dto.ChatMessage;
@@ -34,7 +29,6 @@ import java.util.*;
  * @author Yasitha Thilakaratne
  */
 @Controller
-@RequestMapping("msg-forward")
 public class MessageForwardController extends BaseSecurityController implements ActiveSessionManager.ActiveUserChangeListener {
 
     private final static Logger LOGGER = LoggerFactory.getLogger(MessageForwardController.class);
@@ -56,17 +50,6 @@ public class MessageForwardController extends BaseSecurityController implements 
     @PreDestroy
     private void destroy() {
         activeSessionManager.removeListener(this);
-    }
-
-    @RequestMapping("/chatbot")
-    public String getChatBot(ModelMap modelMap) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (!(auth instanceof AnonymousAuthenticationToken)) {
-            modelMap.addAttribute("username", getCurrentUserName());
-            modelMap.addAttribute("onlineUsers", activeSessionManager.getAllExceptCurrentUser(getCurrentUserName()));
-            return "sockJsEndToEndChat";
-        }
-        return "login";
     }
 
     @Autowired

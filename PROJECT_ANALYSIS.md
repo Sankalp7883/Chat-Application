@@ -83,7 +83,7 @@ message serialization.
 The server is packaged as `sample-chat.war`. Its important areas are:
 
 - `config`: MVC, security, Redis, raw WebSocket, and STOMP configuration.
-- `controller`: authentication, chat, history, files, and legacy JSP routes.
+- `controller`: authentication, chat, history, files, and WebSocket endpoints.
 - `service`: user, chat, authentication, and persistence operations.
 - `entity` and `repository`: JPA domain models and database access.
 - `security`: JWT filtering and WebSocket handshake authentication.

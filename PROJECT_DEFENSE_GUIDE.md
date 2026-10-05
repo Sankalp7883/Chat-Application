@@ -48,7 +48,7 @@ presence, typing events, delivery/read receipts, and raw broadcast messages.
 - Typing indicators and delivery/read receipts.
 - Message history, recent-message loading, and search.
 - File upload and download support.
-- React browser client, legacy JSP examples, and Java Swing client.
+- React browser client and Java Swing client.
 
 ## Backend
 

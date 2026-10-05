@@ -59,8 +59,7 @@ spring-web-socket-chat/
 
 The `model` module contains shared message DTOs. The `server` module contains
 the Spring Boot application, persistence layer, security, WebSocket
-configuration, REST APIs, and legacy JSP examples. The `frontend` module
-contains the modern React client.
+configuration, and REST APIs. The `frontend` module contains the React client.
 
 ## Communication model
 
